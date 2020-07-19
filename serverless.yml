@@ -1,0 +1,77 @@
+# serverless.yml
+
+service: serverless-flask
+
+plugins:
+  - serverless-python-requirements
+  - serverless-wsgi
+  - serverless-dynamodb-local
+
+custom:
+  tableName: 'events-table-${self:provider.stage}'
+  wsgi:
+    app: app.app
+    packRequirements: false
+  pythonRequirements:
+    dockerizePip: non-linux
+  dynamodb:
+    stages:
+      - test
+    start:
+      migrate: true
+
+provider:
+  name: aws
+  runtime: python3.6
+  stage: dev
+  region: us-east-1
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+      Resource:
+        - { "Fn::GetAtt": ["EventsDynamoDBTable", "Arn" ] }
+  environment:
+    EVENTS_TABLE: ${self:custom.tableName}
+
+functions:
+  app:
+    handler: wsgi_handler.handler
+    events:
+      - http: ANY /
+      - http: 'ANY {proxy+}'
+  getEvent:
+    handler: wsgi_handler.handler
+    events:
+      - http: 'GET /events/{proxy+}'
+  createEvent:
+    handler: wsgi_handler.handler
+    events:
+      - http: 'POST /events'
+  updateEvent:
+    handler: wsgi_handler.handler
+    events:
+      - http: 'PUT /events/{proxy+}'
+
+resources:
+  Resources:
+    EventsDynamoDBTable:
+      Type: 'AWS::DynamoDB::Table'
+      Properties:
+        AttributeDefinitions:
+          -
+            AttributeName: eventId
+            AttributeType: S
+        KeySchema:
+          -
+            AttributeName: eventId
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+        TableName: ${self:custom.tableName}
